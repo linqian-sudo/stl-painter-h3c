@@ -1,0 +1,13 @@
+# temp / test files
+_check.mjs
+_unit.mjs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# local test models
+*.stl
+*.3mf
+!example/*.stl
