@@ -30,7 +30,7 @@
 ## 使用
 
 ### 在线
-打开 GitHub Pages 链接（部署后填入）。
+**https://linqian-sudo.github.io/stl-painter-h3c/** — 直接用浏览器打开即可，无需安装，模型不上传。
 
 ### 本地
 需要联网加载 CDN 上的 Three.js / JSZip。
