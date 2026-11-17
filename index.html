@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STL Painter · H3C 多色上色</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+    "jszip": "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm"
+  }
+}
+</script>
+<style>
+  :root{
+    --topbar:#1e2430; --topbar-text:#e8ecf2; --accent:#4f9cf9;
+    --panel:#f7f8fa; --border:#dfe3e8; --text:#2b3138; --muted:#7b838d;
+    --canvas:#ffffff; --danger:#e05252;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{height:100%; font-family:"Segoe UI","Microsoft YaHei",sans-serif; color:var(--text);}
+  #app{display:flex; flex-direction:column; height:100vh;}
+
+  #topbar{height:52px; background:var(--topbar); color:var(--topbar-text);
+    display:flex; align-items:center; gap:14px; padding:0 18px; flex-shrink:0;}
+  #topbar .logo{font-size:15px; font-weight:600; letter-spacing:.3px;}
+  #topbar .logo small{font-weight:400; color:#9aa5b4; margin-left:8px; font-size:12px;}
+  #topbar .spacer{flex:1;}
+  #topbar button{background:#333b4a; color:#e8ecf2; border:1px solid #454f61;
+    padding:7px 13px; border-radius:6px; cursor:pointer; font-size:13px;}
+  #topbar button:hover{background:#3d4759;}
+  #topbar button.primary{background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600;}
+  #topbar button.primary:hover{background:#3d8bea;}
+  #topbar button:disabled{opacity:.45; cursor:not-allowed;}
+
+  #main{flex:1; display:flex; min-height:0;}
+  #sidebar{width:272px; background:var(--panel); border-right:1px solid var(--border);
+    display:flex; flex-direction:column; overflow-y:auto; flex-shrink:0;}
+  .sec{padding:16px; border-bottom:1px solid var(--border);}
+  .sec h3{font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:var(--muted);
+    margin-bottom:12px; font-weight:600;}
+  .row{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .row label{font-size:13px;}
+  .row:last-child{margin-bottom:0;}
+  input[type=range]{flex:1; accent-color:var(--accent);}
+  .val{font-variant-numeric:tabular-nums; color:var(--muted); font-size:12px; min-width:38px; text-align:right;}
+  .btn{background:#fff; border:1px solid var(--border); border-radius:6px; padding:8px 10px;
+    cursor:pointer; font-size:13px; flex:1; color:var(--text);}
+  .btn:hover{border-color:var(--accent); color:var(--accent);}
+  .btn:disabled{opacity:.4; cursor:not-allowed;}
+  .btn.danger:hover{border-color:var(--danger); color:var(--danger);}
+  .btn.tool{font-weight:600;}
+  .btn.tool.active{background:var(--accent); border-color:var(--accent); color:#fff;}
+  .btn.tool.active:hover{background:#3d8bea; color:#fff;}
+
+  #palette{display:grid; grid-template-columns:repeat(5,1fr); gap:8px;}
+  .swatch{aspect-ratio:1; border-radius:7px; border:2px solid transparent; cursor:pointer;
+    position:relative; box-shadow:0 0 0 1px rgba(0,0,0,.08);}
+  .swatch.active{border-color:var(--text); box-shadow:0 0 0 2px #fff, 0 0 0 3px var(--text);}
+  .swatch .del{position:absolute; top:-5px; right:-5px; width:15px; height:15px; border-radius:50%;
+    background:#333; color:#fff; font-size:10px; line-height:15px; text-align:center; display:none;}
+  .swatch:hover .del{display:block;}
+  .addcolor{display:flex; align-items:center; gap:8px; margin-top:12px;}
+  .addcolor input[type=color]{width:38px; height:34px; border:1px solid var(--border); border-radius:6px; cursor:pointer; padding:2px; background:#fff;}
+
+  .stats{font-size:12px; color:var(--muted); line-height:1.9;}
+  .stats b{color:var(--text); font-variant-numeric:tabular-nums; font-weight:600;}
+  .hint{font-size:11px; color:var(--muted); line-height:1.7; margin-top:10px;}
+  kbd{background:#eceff3; border:1px solid var(--border); border-bottom-width:2px; border-radius:4px;
+    padding:0 5px; font-size:10px; font-family:inherit; color:#555;}
+
+  #viewport{flex:1; position:relative; background:var(--canvas); min-width:0;}
+  #viewport canvas{display:block;}
+  #statusbar{height:28px; background:var(--panel); border-top:1px solid var(--border);
+    display:flex; align-items:center; padding:0 14px; font-size:11px; color:var(--muted); gap:16px; flex-shrink:0;}
+
+  #dropmask{position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+    background:rgba(79,156,249,.12); border:2px dashed var(--accent); border-radius:8px;
+    color:var(--accent); font-size:18px; font-weight:600; pointer-events:none; z-index:5;}
+  #dropmask.show{display:flex;}
+  #empty{position:absolute; inset:0; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; color:var(--muted); gap:10px; pointer-events:none;}
+  #empty .big{font-size:17px; font-weight:600; color:#98a1ac;}
+  #empty .small{font-size:13px;}
+  #toast{position:absolute; bottom:20px; left:50%; transform:translateX(-50%);
+    background:#2b3138; color:#fff; padding:9px 18px; border-radius:20px; font-size:13px;
+    opacity:0; transition:opacity .25s; pointer-events:none; z-index:6;}
+  #toast.show{opacity:1;}
+  #cursorRing{position:absolute; border:1.5px solid var(--accent); border-radius:50%;
+    pointer-events:none; display:none; z-index:4; box-shadow:0 0 0 1px rgba(255,255,255,.8) inset;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="topbar">
+    <div class="logo">STL Painter <small>多色上色 · H3C</small></div>
+    <div class="spacer"></div>
+    <button id="btnDemo">加载示例</button>
+    <button id="btnImport">导入 STL</button>
+    <button id="btnExport" class="primary" disabled>导出 3MF</button>
+    <input type="file" id="fileInput" accept=".stl" hidden>
+  </div>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div class="sec">
+        <h3>上色工具</h3>
+        <div class="row">
+          <button class="btn tool active" id="toolWand">魔棒 · 整区</button>
+          <button class="btn tool" id="toolBrush">笔刷 · 局部</button>
+        </div>
+        <div class="row" id="brushRow" style="display:none;">
+          <label>笔刷</label>
+          <input type="range" id="brushSize" min="4" max="80" value="24">
+          <span class="val" id="brushVal">24px</span>
+        </div>
+        <div class="hint" id="toolHint">魔棒：点击一个面，填满整个折痕分区。快捷键 <kbd>W</kbd></div>
+      </div>
+
+      <div class="sec">
+        <h3>分区设置</h3>
+        <div class="row">
+          <label>折痕角</label>
+          <input type="range" id="creaseAngle" min="10" max="80" value="35">
+          <span class="val" id="angleVal">35°</span>
+        </div>
+        <div class="row">
+          <button class="btn" id="btnRepartition" disabled>重新分区</button>
+        </div>
+        <div class="hint">角度越小，分区越细。魔棒按此分区填色；重新分区不会丢失已上的颜色。</div>
+      </div>
+
+      <div class="sec">
+        <h3>调色板 <span id="colorCount" style="float:right;font-weight:400;text-transform:none;">4 色</span></h3>
+        <div id="palette"></div>
+        <div class="addcolor">
+          <input type="color" id="newColor" value="#7ed957">
+          <button class="btn" id="btnAddColor">+ 添加颜色</button>
+        </div>
+        <div class="hint">当前颜色：<b id="curColorName">—</b></div>
+      </div>
+
+      <div class="sec">
+        <h3>历史</h3>
+        <div class="row">
+          <button class="btn" id="btnUndo" disabled>撤销</button>
+          <button class="btn" id="btnRedo" disabled>重做</button>
+        </div>
+        <div class="row">
+          <button class="btn danger" id="btnReset" disabled>清空上色</button>
+        </div>
+        <div class="hint"><kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>Ctrl</kbd>+<kbd>Y</kbd> 重做</div>
+      </div>
+
+      <div class="sec">
+        <h3>模型信息</h3>
+        <div class="stats">
+          三角面：<b id="statTri">—</b><br>
+          可上色区域：<b id="statRegion">—</b><br>
+          已上色面：<b id="statPainted">—</b><br>
+          文件名：<b id="statName">—</b>
+        </div>
+      </div>
+    </aside>
+
+    <div id="viewport">
+      <div id="empty">
+        <div class="big">拖入 STL 文件开始上色</div>
+        <div class="small">或点击右上角「加载示例」体验 · 模型不会上传</div>
+      </div>
+      <div id="dropmask">松开以载入 STL</div>
+      <div id="cursorRing"></div>
+      <div id="toast"></div>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <span>左键旋转 · 滚轮缩放 · 右键平移</span>
+    <span id="statusHint">魔棒：选色后点击模型区域上色</span>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import JSZip from 'jszip';
+
+// ---------- state ----------
+let renderer, scene, camera, controls, mesh, grid;
+let triCount = 0, regionCount = 0;
+let regionOfTri = null;          // Uint32Array, triangle -> region id
+let regionMembers = null;        // Array<Array<number>>, region -> triangle ids
+let faceNeighbors = null;        // Array<Array<number>>, triangle -> adjacent triangles
+let faceCenters = null;          // Float32Array, triangle*3 -> center xyz
+let weldVertices = null;         // Float32Array, welded unique vertices
+let weldIndexOf = null;          // Uint32Array, original vertex -> welded index
+let weldTriIndices = null;       // Uint32Array, triangle*3 -> welded index
+let faceColor = null;            // Int16Array, triangle -> palette index (-1 = unpainted)
+let palette = [
+  {hex:'#e05252', name:'红'},
+  {hex:'#4f9cf9', name:'蓝'},
+  {hex:'#f2c14e', name:'黄'},
+  {hex:'#7ed957', name:'绿'}
+];
+let currentColor = 0;
+let currentTool = 'wand';        // 'wand' | 'brush'
+let brushPx = 24;
+let undoStack = [], redoStack = [];
+let sourceName = '';
+let painting = false;
+let lastBrushX = -1, lastBrushY = -1;
+
+const viewport = document.getElementById('viewport');
+const $ = id => document.getElementById(id);
+
+// ---------- init three ----------
+function initThree(){
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color('#ffffff');
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+  camera.position.set(120, 100, 140);
+  renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  viewport.appendChild(renderer.domElement);
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0,0,0);
+  grid = new THREE.GridHelper(400, 40, '#d5dae0', '#eceff2');
+  scene.add(grid);
+  scene.add(new THREE.HemisphereLight('#ffffff','#c8ccd2', 2.2));
+  const dl = new THREE.DirectionalLight('#ffffff', 1.6);
+  dl.position.set(80,160,100);
+  scene.add(dl);
+  window.addEventListener('resize', onResize);
+  onResize();
+  renderer.setAnimationLoop(()=>{ controls.update(); renderer.render(scene,camera); });
+
+  // pointer handling (capture so brush can suppress OrbitControls rotate)
+  let downX=0, downY=0;
+  renderer.domElement.addEventListener('pointerdown', e=>{
+    downX=e.clientX; downY=e.clientY; lastBrushX=e.clientX; lastBrushY=e.clientY;
+    if(e.button!==0 || !mesh) return;
+    if(currentTool==='brush'){
+      const hit = pickFace(e.clientX, e.clientY);
+      if(hit){
+        controls.enabled=false;
+        painting=true;
+        pushUndo();
+        brushAt(e.clientX, e.clientY);
+      }
+    }
+  }, true);
+  renderer.domElement.addEventListener('pointermove', e=>{
+    updateCursorRing(e.clientX, e.clientY);
+    if(currentTool==='brush' && painting){
+      if(Math.hypot(e.clientX-lastBrushX, e.clientY-lastBrushY) >= Math.max(4, brushPx*0.35)){
+        brushAt(e.clientX, e.clientY);
+        lastBrushX=e.clientX; lastBrushY=e.clientY;
+      }
+    }
+  });
+  window.addEventListener('pointerup', e=>{
+    if(painting){
+      painting=false; controls.enabled=true; return;
+    }
+    // 魔棒：仅在 wand 模式、左键、未拖动时执行
+    if(e.button!==0 || !mesh || currentTool!=='wand') return;
+    if(Math.hypot(e.clientX-downX, e.clientY-downY) > 5) return;
+    wandAt(e.clientX, e.clientY);
+  });
+  renderer.domElement.addEventListener('pointerleave', ()=>{ $('cursorRing').style.display='none'; });
+  renderer.domElement.addEventListener('pointerenter', ()=>{ if(currentTool==='brush') $('cursorRing').style.display='block'; });
+}
+
+function onResize(){
+  const w = viewport.clientWidth, h = viewport.clientHeight;
+  if(!w||!h) return;
+  renderer.setSize(w,h);
+  camera.aspect = w/h;
+  camera.updateProjectionMatrix();
+}
+
+// ---------- geometry -> regions + adjacency ----------
+function buildRegions(geometry, angleDeg){
+  const pos = geometry.attributes.position;
+  triCount = pos.count / 3;
+  const q = 1e4;
+  const map = new Map();
+  const vArr = [];
+  const weldIdx = new Uint32Array(pos.count);
+  for(let i=0;i<pos.count;i++){
+    const x=pos.getX(i), y=pos.getY(i), z=pos.getZ(i);
+    const key = `${Math.round(x*q)}_${Math.round(y*q)}_${Math.round(z*q)}`;
+    let idx = map.get(key);
+    if(idx===undefined){ idx=vArr.length/3; vArr.push(x,y,z); map.set(key,idx); }
+    weldIdx[i] = idx;
+  }
+  weldVertices = new Float32Array(vArr);
+  weldIndexOf = weldIdx;
+  const wtri = new Uint32Array(triCount*3);
+  for(let t=0;t<triCount;t++){
+    wtri[t*3]   = weldIdx[t*3];
+    wtri[t*3+1] = weldIdx[t*3+1];
+    wtri[t*3+2] = weldIdx[t*3+2];
+  }
+  weldTriIndices = wtri;
+
+  // face centers + normals
+  faceCenters = new Float32Array(triCount*3);
+  const normals = [];
+  const a=new THREE.Vector3(), b=new THREE.Vector3(), c=new THREE.Vector3();
+  const ab=new THREE.Vector3(), ac=new THREE.Vector3(), n=new THREE.Vector3();
+  for(let t=0;t<triCount;t++){
+    const i0=wtri[t*3], i1=wtri[t*3+1], i2=wtri[t*3+2];
+    for(let k=0;k<3;k++) faceCenters[t*3+k]=(weldVertices[i0*3+k]+weldVertices[i1*3+k]+weldVertices[i2*3+k])/3;
+    a.set(weldVertices[i0*3],weldVertices[i0*3+1],weldVertices[i0*3+2]);
+    b.set(weldVertices[i1*3],weldVertices[i1*3+1],weldVertices[i1*3+2]);
+    c.set(weldVertices[i2*3],weldVertices[i2*3+1],weldVertices[i2*3+2]);
+    ab.subVectors(b,a); ac.subVectors(c,a);
+    n.crossVectors(ab,ac).normalize();
+    normals.push(n.clone());
+  }
+
+  // edge -> triangles, build adjacency + union by dihedral angle
+  const edgeMap = new Map();
+  for(let t=0;t<triCount;t++){
+    const ids=[wtri[t*3],wtri[t*3+1],wtri[t*3+2]];
+    for(let k=0;k<3;k++){
+      const u=ids[k], v=ids[(k+1)%3];
+      const key = u<v ? `${u}_${v}` : `${v}_${u}`;
+      let arr = edgeMap.get(key);
+      if(!arr){ arr=[]; edgeMap.set(key,arr); }
+      arr.push(t);
+    }
+  }
+  faceNeighbors = Array.from({length:triCount},()=>[]);
+  const parent = new Uint32Array(triCount);
+  for(let i=0;i<triCount;i++) parent[i]=i;
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function union(x,y){ x=find(x); y=find(y); if(x!==y) parent[x]=y; }
+  const cosTh = Math.cos(angleDeg*Math.PI/180);
+  for(const tris of edgeMap.values()){
+    for(let i=0;i<tris.length;i++) for(let j=i+1;j<tris.length;j++){
+      const ti=tris[i], tj=tris[j];
+      if(faceNeighbors[ti].indexOf(tj)<0){ faceNeighbors[ti].push(tj); faceNeighbors[tj].push(ti); }
+      if(normals[ti].dot(normals[tj]) >= cosTh) union(ti,tj);
+    }
+  }
+
+  const remap = new Map();
+  regionOfTri = new Uint32Array(triCount);
+  for(let t=0;t<triCount;t++){
+    const r=find(t);
+    let id=remap.get(r);
+    if(id===undefined){ id=remap.size; remap.set(r,id); }
+    regionOfTri[t]=id;
+  }
+  regionCount = remap.size;
+  regionMembers = Array.from({length:regionCount},()=>[]);
+  for(let t=0;t<triCount;t++) regionMembers[regionOfTri[t]].push(t);
+  faceColor = new Int16Array(triCount).fill(-1);
+  return regionCount;
+}
+
+// ---------- mesh loading ----------
+function setGeometry(geometry, name){
+  geometry = geometry.index ? geometry.toNonIndexed() : geometry;
+  buildRegions(geometry, +$('creaseAngle').value);
+  geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count*3),3));
+  const mat = new THREE.MeshStandardMaterial({vertexColors:true, side:THREE.DoubleSide, roughness:.85, metalness:0});
+  if(mesh){ scene.remove(mesh); mesh.geometry.dispose(); mesh.material.dispose(); }
+  mesh = new THREE.Mesh(geometry, mat);
+  scene.add(mesh);
+  sourceName = name || 'model';
+  undoStack=[]; redoStack=[];
+  applyAllColors();
+  updateUI();
+  frameModel();
+  $('btnExport').disabled=false;
+  $('btnRepartition').disabled=false;
+  $('btnUndo').disabled=true; $('btnRedo').disabled=true; $('btnReset').disabled=true;
+  $('empty').style.display='none';
+  toast(`已载入：${triCount.toLocaleString()} 面 / ${regionCount} 个分区`);
+}
+
+function frameModel(){
+  if(!mesh) return;
+  const box = new THREE.Box3().setFromObject(mesh);
+  const size = box.getSize(new THREE.Vector3()).length();
+  const center = box.getCenter(new THREE.Vector3());
+  controls.target.copy(center);
+  camera.position.copy(center).add(new THREE.Vector3(size*0.9, size*0.75, size*1.1));
+  camera.near = size/1000; camera.far = size*20;
+  camera.updateProjectionMatrix();
+  const gridSize = Math.max(100, Math.ceil(size/10)*10*2);
+  scene.remove(grid);
+  grid = new THREE.GridHelper(gridSize, Math.round(gridSize/10), '#d5dae0','#eceff2');
+  grid.position.y = box.min.y;
+  scene.add(grid);
+}
+
+function loadSTL(arrayBuffer, name){
+  try{
+    const geo = new STLLoader().parse(arrayBuffer);
+    setGeometry(geo, name);
+  }catch(err){ console.error(err); toast('STL 解析失败，请检查文件'); }
+}
+
+function loadDemo(){
+  const base = new THREE.BoxGeometry(60,40,12);
+  const mid  = new THREE.BoxGeometry(34,22,10); mid.translate(0,0,11);
+  const top  = new THREE.CylinderGeometry(9,9,14,24); top.translate(0,0,23);
+  const merged = mergeGeometries([base,mid,top], false);
+  setGeometry(merged, '示例模型');
+}
+
+// ---------- picking + painting ----------
+const _ray = new THREE.Raycaster();
+const _ndc = new THREE.Vector2();
+function pickFace(clientX, clientY){
+  if(!mesh) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  _ndc.set(((clientX-rect.left)/rect.width)*2-1, -((clientY-rect.top)/rect.height)*2+1);
+  _ray.setFromCamera(_ndc, camera);
+  return _ray.intersectObject(mesh, false)[0] || null;
+}
+
+// wand: flood the whole crease region of the picked face
+function wandAt(clientX, clientY){
+  const hit = pickFace(clientX, clientY);
+  if(!hit || hit.faceIndex==null) return;
+  const region = regionOfTri[hit.faceIndex];
+  const tris = regionMembers[region];
+  if(tris.every(t=>faceColor[t]===currentColor)) return;
+  pushUndo();
+  for(const t of tris) faceColor[t]=currentColor;
+  applyFaces(tris);
+  updateUI();
+}
+
+// brush: BFS over adjacent faces whose centers fall inside the screen-space radius
+function brushAt(clientX, clientY){
+  const hit = pickFace(clientX, clientY);
+  if(!hit || hit.faceIndex==null) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const dist = camera.position.distanceTo(hit.point);
+  const worldPerPx = 2 * dist * Math.tan(camera.fov*Math.PI/360) / rect.height;
+  const radius = brushPx * worldPerPx;
+  const r2 = radius*radius;
+  const seed = hit.faceIndex;
+  const visited = new Uint8Array(triCount);
+  const queue = [seed]; visited[seed]=1;
+  const changed = [];
+  const px=hit.point.x, py=hit.point.y, pz=hit.point.z;
+  while(queue.length){
+    const t = queue.pop();
+    const dx=faceCenters[t*3]-px, dy=faceCenters[t*3+1]-py, dz=faceCenters[t*3+2]-pz;
+    if(dx*dx+dy*dy+dz*dz > r2) continue;
+    if(faceColor[t]!==currentColor){ faceColor[t]=currentColor; changed.push(t); }
+    for(const nb of faceNeighbors[t]) if(!visited[nb]){ visited[nb]=1; queue.push(nb); }
+  }
+  if(changed.length){ applyFaces(changed); updateUI(); }
+}
+
+function updateCursorRing(clientX, clientY){
+  if(currentTool!=='brush') return;
+  const ring = $('cursorRing');
+  const rect = viewport.getBoundingClientRect();
+  const d = brushPx*2;
+  ring.style.width = d+'px'; ring.style.height = d+'px';
+  ring.style.left = (clientX-rect.left-d/2)+'px';
+  ring.style.top  = (clientY-rect.top-d/2)+'px';
+}
+
+function applyAllColors(){ for(let t=0;t<triCount;t++) applyFace(t); flushColors(); }
+function applyFaces(tris){ for(const t of tris) applyFace(t); flushColors(); }
+function applyFace(t){
+  const c = faceColor[t];
+  const col = c>=0 ? hexToRGB(palette[c].hex) : [0.86,0.87,0.88];
+  const attr = mesh.geometry.attributes.color;
+  attr.setXYZ(t*3,   col[0],col[1],col[2]);
+  attr.setXYZ(t*3+1, col[0],col[1],col[2]);
+  attr.setXYZ(t*3+2, col[0],col[1],col[2]);
+}
+function flushColors(){ if(mesh) mesh.geometry.attributes.color.needsUpdate=true; }
+
+function hexToRGB(hex){
+  const h=hex.replace('#','');
+  return [parseInt(h.slice(0,2),16)/255, parseInt(h.slice(2,4),16)/255, parseInt(h.slice(4,6),16)/255];
+}
+
+function pushUndo(){
+  undoStack.push(Int16Array.from(faceColor));
+  if(undoStack.length>60) undoStack.shift();
+  redoStack=[];
+  updateUI();
+}
+function undo(){
+  if(!undoStack.length) return;
+  redoStack.push(Int16Array.from(faceColor));
+  faceColor = undoStack.pop();
+  applyAllColors(); updateUI();
+}
+function redo(){
+  if(!redoStack.length) return;
+  undoStack.push(Int16Array.from(faceColor));
+  faceColor = redoStack.pop();
+  applyAllColors(); updateUI();
+}
+
+// ---------- 3MF export ----------
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function fmt(n){ return Number(n.toFixed(5)); }
+function colorTo3MF(hex){
+  const h=hex.replace('#','');
+  return h.slice(0,2)+h.slice(2,4)+h.slice(4,6)+'FF'; // RRGGBBAA (3MF spec)
+}
+
+function build3MF(){
+  const colors = ['#dce0e4'];
+  const defaultIdx = 0;
+  const used = new Map();
+  for(let t=0;t<triCount;t++){
+    const c=faceColor[t];
+    if(c>=0 && !used.has(c)){ used.set(c, colors.length); colors.push(palette[c].hex); }
+  }
+  const colorgroup = colors.map(h=>`<m:color color="#${colorTo3MF(h)}"/>`).join('');
+
+  const verts = [];
+  for(let i=0;i<weldVertices.length;i+=3){
+    verts.push(`<vertex x="${fmt(weldVertices[i])}" y="${fmt(weldVertices[i+1])}" z="${fmt(weldVertices[i+2])}"/>`);
+  }
+  const tris = [];
+  for(let t=0;t<triCount;t++){
+    const c = faceColor[t];
+    const ci = c>=0 ? used.get(c) : defaultIdx;
+    tris.push(`<triangle v1="${weldTriIndices[t*3]}" v2="${weldTriIndices[t*3+1]}" v3="${weldTriIndices[t*3+2]}" pid="1" p1="${ci}"/>`);
+  }
+
+  const model = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" xmlns:m="http://schemas.microsoft.com/3dmanufacturing/material/2015/02">
+  <resources>
+    <m:colors>
+      <m:colorgroup id="1">${colorgroup}</m:colorgroup>
+    </m:colors>
+    <object id="1" type="model" pid="1" p1="${defaultIdx}">
+      <mesh>
+        <vertices>${verts.join('')}</vertices>
+        <triangles>${tris.join('')}</triangles>
+      </mesh>
+    </object>
+  </resources>
+  <build><item objectid="1"/></build>
+</model>`;
+
+  const contentTypes = `<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>`;
+  const rels = `<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>`;
+  return {model, contentTypes, rels};
+}
+
+async function export3MF(){
+  if(!mesh) return;
+  const {model, contentTypes, rels} = build3MF();
+  const zip = new JSZip();
+  zip.file('[Content_Types].xml', contentTypes);
+  zip.folder('_rels').file('.rels', rels);
+  zip.folder('3D').file('3dmodel.model', model);
+  const blob = await zip.generateAsync({type:'blob'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  const base = sourceName.replace(/\.stl$/i,'');
+  a.download = `${base}_colored.3mf`;
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  toast('已导出 3MF · 用 Bambu Studio 打开即可看到颜色');
+}
+
+// ---------- UI ----------
+function renderPalette(){
+  const el = $('palette');
+  el.innerHTML='';
+  palette.forEach((c,i)=>{
+    const d=document.createElement('div');
+    d.className='swatch'+(i===currentColor?' active':'');
+    d.style.background=c.hex;
+    d.title=c.name+' '+c.hex;
+    d.onclick=()=>{ currentColor=i; renderPalette(); $('curColorName').textContent=`${c.name} ${c.hex}`; };
+    if(palette.length>1){
+      const del=document.createElement('div');
+      del.className='del'; del.textContent='×';
+      del.onclick=e=>{ e.stopPropagation(); removeColor(i); };
+      d.appendChild(del);
+    }
+    el.appendChild(d);
+  });
+  $('colorCount').textContent = palette.length+' 色';
+}
+
+function removeColor(i){
+  pushUndo();
+  palette.splice(i,1);
+  for(let t=0;t<triCount;t++){
+    if(faceColor[t]===i) faceColor[t]=-1;
+    else if(faceColor[t]>i) faceColor[t]--;
+  }
+  if(currentColor>=palette.length) currentColor=palette.length-1;
+  applyAllColors(); renderPalette(); updateUI();
+}
+
+function addColor(){
+  const hex=$('newColor').value;
+  if(palette.some(c=>c.hex.toLowerCase()===hex.toLowerCase())){ toast('该颜色已在调色板中'); return; }
+  if(palette.length>=16){ toast('最多 16 色'); return; }
+  palette.push({hex, name:'自定义'});
+  currentColor=palette.length-1;
+  renderPalette();
+  $('curColorName').textContent=`自定义 ${hex}`;
+}
+
+function setTool(tool){
+  currentTool = tool;
+  $('toolWand').classList.toggle('active', tool==='wand');
+  $('toolBrush').classList.toggle('active', tool==='brush');
+  $('brushRow').style.display = tool==='brush' ? 'flex' : 'none';
+  $('cursorRing').style.display = tool==='brush' ? 'block' : 'none';
+  renderer.domElement.style.cursor = tool==='brush' ? 'none' : 'default';
+  if(tool==='wand'){
+    $('toolHint').innerHTML='魔棒：点击一个面，填满整个折痕分区。快捷键 <kbd>W</kbd>';
+    $('statusHint').textContent='魔棒：选色后点击模型区域上色';
+  }else{
+    $('toolHint').innerHTML='笔刷：按住拖动，按相邻面扩散局部上色。快捷键 <kbd>B</kbd>，<kbd>[</kbd>/<kbd>]</kbd> 调大小';
+    $('statusHint').textContent='笔刷：按住左键拖动上色（此时旋转请用右键）';
+  }
+}
+
+function updateUI(){
+  const painted = faceColor ? Array.from(faceColor).filter(c=>c>=0).length : 0;
+  $('statTri').textContent = triCount.toLocaleString();
+  $('statRegion').textContent = regionCount.toLocaleString();
+  $('statPainted').textContent = triCount ? `${painted.toLocaleString()} / ${triCount.toLocaleString()}` : '—';
+  $('statName').textContent = sourceName;
+  $('btnUndo').disabled = undoStack.length===0;
+  $('btnRedo').disabled = redoStack.length===0;
+  $('btnReset').disabled = painted===0;
+}
+
+let toastTimer;
+function toast(msg){
+  const t=$('toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.classList.remove('show'), 2600);
+}
+
+// ---------- events ----------
+$('btnImport').onclick=()=>$('fileInput').click();
+$('fileInput').onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>loadSTL(r.result, f.name);
+  r.readAsArrayBuffer(f);
+  e.target.value='';
+};
+$('btnDemo').onclick=loadDemo;
+$('btnExport').onclick=export3MF;
+$('btnAddColor').onclick=addColor;
+$('btnUndo').onclick=undo;
+$('btnRedo').onclick=redo;
+$('btnReset').onclick=()=>{ pushUndo(); faceColor.fill(-1); applyAllColors(); updateUI(); toast('已清空上色'); };
+$('creaseAngle').oninput=e=>$('angleVal').textContent=e.target.value+'°';
+$('btnRepartition').onclick=()=>{
+  if(!mesh) return;
+  const saved = faceColor;
+  const geo=mesh.geometry;
+  geo.deleteAttribute('color');
+  buildRegions(geo, +$('creaseAngle').value);
+  faceColor = saved; // face order unchanged -> keep colors
+  geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.attributes.position.count*3),3));
+  undoStack=[]; redoStack=[];
+  applyAllColors(); updateUI();
+  toast(`重新分区：${regionCount} 个区域（颜色已保留）`);
+};
+$('toolWand').onclick=()=>setTool('wand');
+$('toolBrush').onclick=()=>setTool('brush');
+$('brushSize').oninput=e=>{ brushPx=+e.target.value; $('brushVal').textContent=brushPx+'px'; };
+
+window.addEventListener('keydown', e=>{
+  if(e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+  const k=e.key.toLowerCase();
+  if((e.ctrlKey||e.metaKey) && k==='z'){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
+  if((e.ctrlKey||e.metaKey) && k==='y'){ e.preventDefault(); redo(); return; }
+  if(k==='w'){ setTool('wand'); }
+  else if(k==='b'){ setTool('brush'); }
+  else if(k==='[' || k===']'){
+    brushPx = Math.max(4, Math.min(80, brushPx + (k==='['?-4:4)));
+    $('brushSize').value=brushPx; $('brushVal').textContent=brushPx+'px';
+  }
+});
+
+viewport.addEventListener('dragover', e=>{ e.preventDefault(); $('dropmask').classList.add('show'); });
+viewport.addEventListener('dragleave', e=>{ if(e.target===viewport) $('dropmask').classList.remove('show'); });
+viewport.addEventListener('drop', e=>{
+  e.preventDefault(); $('dropmask').classList.remove('show');
+  const f=e.dataTransfer.files[0]; if(!f || !/\.stl$/i.test(f.name)){ toast('请拖入 STL 文件'); return; }
+  const r=new FileReader();
+  r.onload=()=>loadSTL(r.result, f.name);
+  r.readAsArrayBuffer(f);
+});
+
+// ---------- go ----------
+initThree();
+renderPalette();
+setTool('wand');
+$('curColorName').textContent=`${palette[0].name} ${palette[0].hex}`;
+</script>
+</body>
+</html>
